@@ -1,5 +1,1 @@
-SELECT 
-    Region,
-    AVG(PJME_MW) AS Regional_Avg_Load
-FROM energy
-GROUP BY Region;
+SELECT CAST(Datetime AS DATE) AS Day, AVG(PJME_MW) AS Avg_Daily_Load FROM energy GROUP BY CAST(Datetime AS DATE) ORDER BY Day;
