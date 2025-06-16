@@ -3,4 +3,4 @@ SELECT
     MAX(PJME_MW) AS Peak_Load
 FROM energy
 GROUP BY DATEPART(HOUR, Datetime)
-ORDER BY Hour;
+ORDER BY Peak_Load DESC;
