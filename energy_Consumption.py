@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime
 
-df = pd.read_csv("C:/Users/bkdee/Downloads/energy.csv")  # Replace with actual filename
+df = pd.read_csv("C:/Users/bkdee/Downloads/energy_consumption.csv")  # Replace with actual filename
 df['Datetime'] = pd.to_datetime(df['Datetime'], format='%d-%m-%Y %H:%M')
 df['Hour'] = df['Datetime'].dt.hour
 df['Day'] = df['Datetime'].dt.date
@@ -33,6 +33,7 @@ ORDER BY Hour
 # Calculate Average Weekly Load
 df['Week_Start'] = df['Datetime'].dt.to_period('W').apply(lambda r: r.start_time)
 weekly_avg = df.groupby('Week_Start')['Load'].mean().reset_index().rename(columns={'Load': 'Avg_Weekly_Load'})
+
 
 plt.figure(figsize=(12,6))
 plt.plot(weekly_avg['Week_Start'], weekly_avg['Avg_Weekly_Load'], marker='o', linestyle='-')
