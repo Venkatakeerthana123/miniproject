@@ -2,26 +2,55 @@ import pandas as pd
 import sqlite3
 import matplotlib.pyplot as plt
 import seaborn as sns
+import numpy as np
 from datetime import datetime
 
-df = pd.read_csv("C:/Users/bkdee/Downloads/energy_consumption.csv")  # Replace with actual filename
+# Load the updated CSV
+df = pd.read_csv("C:/Users/bkdee/Downloads/energy_consumption.csv")
+
+# Parse datetime and extract components
 df['Datetime'] = pd.to_datetime(df['Datetime'], format='%d-%m-%Y %H:%M')
 df['Hour'] = df['Datetime'].dt.hour
 df['Day'] = df['Datetime'].dt.date
-device_types = ['AC', 'Heater', 'Fridge', 'TV', 'Washer']
-df['Device_Type'] = [device_types[i % len(device_types)] for i in range(len(df))]
-regions = ['North', 'South', 'East', 'West', 'Central']
-df['Region'] = [regions[i % len(regions)] for i in range(len(df))]
+df['Week_Start'] = df['Datetime'].dt.to_period('W').apply(lambda r: r.start_time)
+df['Date'] = df['Datetime'].dt.date
+
+# Rename PJME_MW column if necessary
+if 'PJME_MW' in df.columns:
+    df.rename(columns={'PJME_MW': 'Load'}, inplace=True)
+# Adjust load values based on Device_Type and Location (realistic simulation)
+adjustment_factors = {
+    'Home': {
+        'AC': 0.6,
+        'Refrigerator': 1.0,
+        'Lights': 1.2,
+        'TV': 1.1
+    },
+    'Company': {
+        'AC': 1.6,
+        'Refrigerator': 0.8,
+        'Lights': 1.4,
+        'TV': 0.7
+    }
+}
+
+# Apply adjusted load
+df['Adjusted_Load'] = df.apply(
+    lambda row: row['Load'] * adjustment_factors[row['Location']][row['Device_Type']],
+    axis=1
+)
+# Extract year from datetime
+df['Year'] = df['Datetime'].dt.year
+
+# Group by Year and Region, aggregate Adjusted_Load
+yearly_region_load = df.groupby(['Year', 'Region'])['Adjusted_Load'].mean().reset_index()
 
 
-# Rename PJME_MW column
-df.rename(columns={'PJME_MW': 'Load'}, inplace=True)
-
-# --- SQL Implementation using SQLite in-memory ---
+# --- SQL Analysis in Memory ---
 conn = sqlite3.connect(":memory:")
 df.to_sql("energy", conn, index=False, if_exists="replace")
 
-# 1. Peak Usage Time (Max Load per Hour)
+# Peak Load by Hour
 peak_usage = pd.read_sql_query("""
 SELECT Hour, MAX(Load) as Peak_Load
 FROM (SELECT strftime('%H', Datetime) as Hour, Load FROM energy)
@@ -29,11 +58,10 @@ GROUP BY Hour
 ORDER BY Hour
 """, conn)
 
-# 2. Average Daily Load
-# Calculate Average Weekly Load
-df['Week_Start'] = df['Datetime'].dt.to_period('W').apply(lambda r: r.start_time)
-weekly_avg = df.groupby('Week_Start')['Load'].mean().reset_index().rename(columns={'Load': 'Avg_Weekly_Load'})
+# --- Visualizations ---
 
+# 1. Average Weekly Load
+weekly_avg = df.groupby('Week_Start')['Load'].mean().reset_index().rename(columns={'Load': 'Avg_Weekly_Load'})
 
 plt.figure(figsize=(12,6))
 plt.plot(weekly_avg['Week_Start'], weekly_avg['Avg_Weekly_Load'], marker='o', linestyle='-')
@@ -41,15 +69,14 @@ plt.title("Average Weekly Load")
 plt.xlabel("Week Start Date")
 plt.ylabel("Load (MW)")
 plt.xticks(rotation=45)
-plt.tight_layout()
 plt.grid(True)
+plt.tight_layout()
 plt.show()
-# --- Python Visualizations ---
 
-# Plot 1: Average Daily Load
+# 2. Average Daily Load
 avg_daily = df.groupby('Day')['Load'].mean().reset_index().rename(columns={'Load': 'Avg_Daily_Load'})
 plt.figure(figsize=(12,6))
-plt.plot(avg_daily['Day'], avg_daily['Avg_Daily_Load'])
+plt.plot(avg_daily['Day'], avg_daily['Avg_Daily_Load'], color='teal')
 plt.title("Average Daily Load")
 plt.xlabel("Date")
 plt.ylabel("Load (MW)")
@@ -57,19 +84,17 @@ plt.xticks(rotation=45)
 plt.tight_layout()
 plt.show()
 
-# Plot 2: Peak Usage Time (Hourly)
+# 3. Peak Usage Time by Hour
 plt.figure(figsize=(10,5))
-sns.barplot(data=peak_usage, x='Hour', y='Peak_Load')
+sns.barplot(data=peak_usage, x='Hour', y='Peak_Load', palette='rocket')
 plt.title("Peak Usage by Hour")
 plt.xlabel("Hour of Day")
 plt.ylabel("Peak Load (MW)")
+plt.tight_layout()
 plt.show()
 
-# Optional Heatmap: Load by Hour and Date
-df['Date'] = df['Datetime'].dt.date
-df['Hour'] = df['Datetime'].dt.hour
+# 4. Heatmap: Load by Hour and Date
 pivot = df.pivot_table(index='Hour', columns='Date', values='Load')
-
 plt.figure(figsize=(14, 6))
 sns.heatmap(pivot, cmap='YlOrRd')
 plt.title("Heatmap of Energy Load by Hour and Date")
@@ -78,26 +103,32 @@ plt.ylabel("Hour")
 plt.tight_layout()
 plt.show()
 
-# Plot 3: Average Load by Device Type
-device_avg = df.groupby('Device_Type')['Load'].mean().reset_index()
-
-plt.figure(figsize=(12, 6))
-sns.barplot(data=device_avg, x='Device_Type', y='Load', palette='mako')
-plt.title("Average Load by Device Type")
-plt.xlabel("Device Type")
-plt.ylabel("Average Load (MW)")
-plt.xticks(rotation=45)
-plt.tight_layout()
-plt.show()
-
-# Plot 4: Energy Usage Over Time by Region
-region_time = df.groupby(['Datetime', 'Region'])['Load'].sum().reset_index()
+# 5. Energy Usage Over Time by Region
+# Convert Datetime to Week Start
 plt.figure(figsize=(14, 6))
-sns.lineplot(data=region_time, x='Datetime', y='Load', hue='Region', palette='tab10')
-plt.title("Energy Usage Over Time by Region")
-plt.xlabel("Time")
-plt.ylabel("Load (MW)")
-plt.xticks(rotation=45)
+sns.lineplot(data=yearly_region_load, x='Year', y='Adjusted_Load', hue='Region', marker='o', palette='tab10')
+plt.title("Average Energy Load Over Years by Region")
+plt.xlabel("Year")
+plt.ylabel("Average Adjusted Load (MW)")
+plt.grid(True)
+plt.xticks(sorted(df['Year'].unique()), rotation=45)
 plt.legend(title="Region")
 plt.tight_layout()
 plt.show()
+
+
+# 6. Average Load by Device Type and Location (Home vs Company)
+device_location_avg = df.groupby(['Device_Type', 'Location'])['Adjusted_Load'].mean().reset_index()
+
+plt.figure(figsize=(12,6))
+sns.barplot(data=device_location_avg, x='Device_Type', y='Adjusted_Load', hue='Location', palette='Set2')
+plt.title("Realistic Average Load by Device Type: Home vs Company")
+plt.xlabel("Device Type")
+plt.ylabel("Adjusted Load (MW)")
+plt.legend(title="Location")
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.show()
+
+
+
